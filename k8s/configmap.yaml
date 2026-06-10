@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudrelay-config
+  namespace: cloudrelay
+data:
+  SPRING_PROFILES_ACTIVE: docker
+  SPRING_DATA_MONGODB_URI: mongodb://mongo-svc:27017/cloudrelay
+  SPRING_DATA_REDIS_HOST: redis-svc
