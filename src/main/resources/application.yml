@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: cloudrelay
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/cloudrelay
+      auto-index-creation: true
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    default-property-inclusion: non_null
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: cloudrelay
+    distribution:
+      percentiles-histogram:
+        cloudrelay.session.join.latency: true
+        http.server.requests: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+
+cloudrelay:
+  session:
+    default-max-players: 4
+    default-min-players: 2
+    waiting-ttl-hours: 2
+    active-ttl-hours: 6
+    session-code-length: 8

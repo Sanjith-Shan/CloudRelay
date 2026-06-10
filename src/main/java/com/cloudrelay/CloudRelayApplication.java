@@ -1,0 +1,12 @@
+package com.cloudrelay;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class CloudRelayApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(CloudRelayApplication.class, args);
+    }
+}
