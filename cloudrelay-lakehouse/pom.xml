@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.cloudrelay</groupId>
+        <artifactId>cloudrelay-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>cloudrelay-lakehouse</artifactId>
+    <name>cloudrelay-lakehouse</name>
+    <description>Structured Streaming medallion pipeline over CloudRelay session events</description>
+
+    <properties>
+        <!--
+          Spark on Java 17 needs the JVM opened up: Tungsten reaches into
+          sun.misc.Unsafe and the Java serializer walks private fields that the
+          module system hides by default. Without these flags Spark dies with
+          an InaccessibleObjectException that names none of this. The same list
+          lives in scripts/lakehouse.sh so a local run behaves like the tests.
+        -->
+        <spark.jvm.flags>
+            --add-opens=java.base/java.lang=ALL-UNNAMED
+            --add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+            --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+            --add-opens=java.base/java.io=ALL-UNNAMED
+            --add-opens=java.base/java.net=ALL-UNNAMED
+            --add-opens=java.base/java.nio=ALL-UNNAMED
+            --add-opens=java.base/java.util=ALL-UNNAMED
+            --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+            --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+            --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+            --add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+            --add-opens=java.base/sun.security.action=ALL-UNNAMED
+            --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+            -Djdk.reflect.useDirectMethodHandle=false
+        </spark.jvm.flags>
+    </properties>
+
+    <!--
+      Spring Boot's dependency management reaches into this module through the
+      parent, and for one library that is actively harmful.
+
+      Boot 3.2 pins Jersey to the 3.1.x line, which is Jakarta EE 10 and lives in
+      the `jakarta.servlet` namespace. Spark 3.5.1 is built against Jersey 2.40,
+      which is `javax.servlet`. Nothing fails at compile time and nothing fails
+      at resolution; SparkContext simply dies on startup with "Servlet class
+      org.glassfish.jersey.servlet.ServletContainer is not a javax.servlet.Servlet",
+      because Jetty is being handed a servlet from the other namespace entirely.
+
+      Pinning Jersey back to the version Spark expects is the fix. It is also the
+      clearest argument for keeping Spark in its own module: this override is
+      correct here and would be wrong in the Spring Boot service, and a single
+      module build could not hold both.
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.glassfish.jersey</groupId>
+                <artifactId>jersey-bom</artifactId>
+                <version>2.40</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!--
+          Spark is `provided`: a real deployment gets it from the cluster, and
+          keeping it out of the artifact is what stops ~300MB of Spark from ever
+          reaching the Spring Boot jar that serves live traffic. `provided` is
+          still on the compile and test classpaths, so the tests run a genuine
+          local Spark.
+        -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Shipped with the job: the cluster will not have these. -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql-kafka-0-10_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.delta</groupId>
+            <artifactId>delta-spark_${scala.binary.version}</artifactId>
+            <version>${delta.version}</version>
+        </dependency>
+
+        <!--
+          Spark SQL's parser is generated against ANTLR 4.9.3 and throws
+          IncompatibleClassChangeError on any other runtime. Boot's dependency
+          management does not pin it, but a transitive bump would be silent, so
+          pin it here where the requirement is visible.
+        -->
+        <dependency>
+            <groupId>org.antlr</groupId>
+            <artifactId>antlr4-runtime</artifactId>
+            <version>4.9.3</version>
+        </dependency>
+
+        <!--
+          Spark's driver embeds Jetty and declares the servlet API `provided`,
+          expecting Hadoop to supply it. Outside a Hadoop classpath nothing does,
+          and SparkContext dies on NoClassDefFoundError javax/servlet/Servlet
+          before the first line of user code runs. A real cluster has it, so it
+          stays `provided` here too.
+        -->
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>4.0.1</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>${skipUTs}</skipTests>
+                    <argLine>${spark.jvm.flags}</argLine>
+                    <!-- One local SparkSession at a time; parallel forks fight
+                         over the driver port and the warehouse directory. -->
+                    <forkCount>1</forkCount>
+                    <reuseForks>true</reuseForks>
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <argLine>${spark.jvm.flags}</argLine>
+                    <systemPropertyVariables>
+                        <api.version>${docker.api.version}</api.version>
+                    </systemPropertyVariables>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

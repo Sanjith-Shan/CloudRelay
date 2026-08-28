@@ -20,6 +20,7 @@
 
     <modules>
         <module>cloudrelay-service</module>
+        <module>cloudrelay-lakehouse</module>
     </modules>
 
     <properties>
