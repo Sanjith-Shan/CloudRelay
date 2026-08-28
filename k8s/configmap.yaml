@@ -7,3 +7,18 @@ data:
   SPRING_PROFILES_ACTIVE: docker
   SPRING_DATA_MONGODB_URI: mongodb://mongo-svc:27017/cloudrelay
   SPRING_DATA_REDIS_HOST: redis-svc
+
+  # The analytics tee. Off here because these raw manifests do not deploy a
+  # broker; flip it to "true" and point it at one and events start flowing to
+  # the lakehouse. Nothing else about the service changes, and nothing waits on
+  # Kafka being reachable.
+  CLOUDRELAY_ANALYTICS_ENABLED: "false"
+  CLOUDRELAY_KAFKA_BOOTSTRAP: kafka-svc:9092
+  CLOUDRELAY_ANALYTICS_TOPIC: cloudrelay.session-events
+
+  # Skill matchmaking search window, in rating points. Game tuning rather than
+  # infrastructure: the band starts at 100 points and widens by 25 per second
+  # of waiting, up to 600.
+  CLOUDRELAY_MATCHMAKING_INITIAL_WINDOW: "100"
+  CLOUDRELAY_MATCHMAKING_WINDOW_GROWTH_PER_SECOND: "25"
+  CLOUDRELAY_MATCHMAKING_MAX_WINDOW: "600"

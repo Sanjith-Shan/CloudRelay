@@ -34,3 +34,23 @@ mongodb:
 prometheus:
   enabled: true
   serviceMonitor: true
+
+# The analytics tee to the lakehouse.
+#
+# Off by default, because a cluster without a broker is a supported
+# configuration and not a degraded one: the service behaves identically, the
+# health endpoint reports the tee as disabled, and nothing waits on Kafka.
+# Turning it on needs only a reachable bootstrap server.
+analytics:
+  enabled: false
+  bootstrapServers: "kafka-svc:9092"
+  topic: cloudrelay.session-events
+
+# Skill based matchmaking. Window widths are in rating points; the search band
+# grows from initialWindow by growthPerSecond for every second a player waits,
+# up to maxWindow. These are game tuning, not infrastructure — a game with a
+# thin player base wants faster growth.
+matchmaking:
+  initialWindow: 100
+  windowGrowthPerSecond: 25
+  maxWindow: 600

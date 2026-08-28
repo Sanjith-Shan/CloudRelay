@@ -52,7 +52,36 @@ curl -s -X POST "$BASE_URL/api/v1/sessions/$CODE/leave?playerId=bob" | pretty
 step "Alice terminates the session"
 curl -s -X DELETE "$BASE_URL/api/v1/sessions/$CODE?playerId=alice" | pretty
 
+step "Skill based matchmaking: four players of similar rating queue up"
+for entry in "dana:1480" "eli:1495" "faye:1510" "gus:1470"; do
+  name="${entry%%:*}"
+  rating="${entry##*:}"
+  curl -s -X POST "$BASE_URL/api/v1/matchmaking/skill/enqueue" \
+    -H 'Content-Type: application/json' \
+    -d "{\"playerId\":\"$name\",\"displayName\":\"${name}\",\"gameId\":\"apex-legends\",\"region\":\"us-west-2\",\"skillRating\":$rating}" | pretty
+done
+
+step "And one who is nowhere near them"
+curl -s -X POST "$BASE_URL/api/v1/matchmaking/skill/enqueue" \
+  -H 'Content-Type: application/json' \
+  -d '{"playerId":"novice","displayName":"Novice","gameId":"apex-legends","region":"us-west-2","skillRating":600}' | pretty
+
+step "Skill queue depth and the current search window"
+curl -s "$BASE_URL/api/v1/matchmaking/skill/queue?gameId=apex-legends&region=us-west-2" | pretty
+
+step "Form a party of four. The 600 rated player is left queued, not forced in"
+curl -s -X POST "$BASE_URL/api/v1/matchmaking/skill/match?gameId=apex-legends&region=us-west-2&partySize=4" | pretty
+
+step "One player still waiting; their window widens until somebody comparable arrives"
+curl -s "$BASE_URL/api/v1/matchmaking/skill/queue?gameId=apex-legends&region=us-west-2" | pretty
+
+step "Is the analytics tee reaching Kafka?"
+curl -s "$BASE_URL/actuator/health" | pretty
+
 step "Custom Prometheus metrics"
-curl -s "$BASE_URL/actuator/prometheus" | grep -E '^cloudrelay_(sessions|players)' || true
+curl -s "$BASE_URL/actuator/prometheus" | grep -E '^cloudrelay_(sessions|players|matchmaking|analytics)' || true
 
 printf '\nDone. Grafana dashboard at http://localhost:3000\n'
+printf 'Every event above was teed to Kafka. To land it in Delta and query it:\n'
+printf '  docker compose --profile lakehouse up -d --build\n'
+printf '  ./scripts/lakehouse.sh query\n'

@@ -1,0 +1,26 @@
+# Lakehouse image: the Spark medallion pipeline.
+#
+# Separate from the service image on purpose. Spark and its transitive
+# dependencies are roughly 300MB, and the service that serves live traffic has
+# no business carrying them. Two images is the visible consequence of the two
+# module split.
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY cloudrelay-lakehouse/pom.xml cloudrelay-lakehouse/
+# Present so the reactor can read it; the service module is not built here.
+COPY cloudrelay-service/pom.xml cloudrelay-service/
+RUN mvn -B -pl cloudrelay-lakehouse -am dependency:go-offline
+COPY cloudrelay-lakehouse/src cloudrelay-lakehouse/src
+RUN mvn -B -pl cloudrelay-lakehouse -am package -DskipTests \
+ && mvn -B -pl cloudrelay-lakehouse dependency:copy-dependencies \
+      -DincludeScope=test -DoutputDirectory=/app/libs
+
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY --from=build /app/libs /app/libs
+COPY --from=build /app/cloudrelay-lakehouse/target/cloudrelay-lakehouse-*.jar /app/lakehouse.jar
+COPY docker/lakehouse-entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+VOLUME ["/data/lakehouse"]
+ENTRYPOINT ["/app/entrypoint.sh"]

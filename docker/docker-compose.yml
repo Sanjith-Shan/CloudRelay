@@ -1,3 +1,13 @@
+# The whole system: the service, its datastores, the analytics tee, and the
+# observability stack.
+#
+#   docker compose up -d --build                      service + Kafka + dashboards
+#   docker compose --profile lakehouse up -d --build   ... and the Spark pipeline
+#
+# The pipeline is behind a profile because its image carries Spark and takes a
+# few minutes to build the first time. Everything else is quick, and the
+# service publishes to Kafka whether or not anything is reading it — which is
+# the point of a tee.
 services:
   cloudrelay:
     build:
@@ -8,11 +18,18 @@ services:
       - "8080:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - CLOUDRELAY_ANALYTICS_ENABLED=true
+      - CLOUDRELAY_KAFKA_BOOTSTRAP=kafka:29092
     depends_on:
       redis:
         condition: service_healthy
       mongo:
         condition: service_healthy
+      # Deliberately not service_healthy. The tee is designed to survive a
+      # broker that is missing, so making the API wait for Kafka would be
+      # asserting a dependency the code does not have.
+      kafka:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
       interval: 15s
@@ -52,6 +69,60 @@ services:
       - mongo-data:/data/db
     restart: unless-stopped
 
+  # Single node KRaft: broker and controller in one process, no ZooKeeper.
+  # Two listeners because containers reach it as kafka:29092 and anything on
+  # the host reaches it as localhost:9092, and a Kafka client connects to
+  # whatever address the broker advertises rather than the one it was given.
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: cloudrelay-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 24
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    restart: unless-stopped
+
+  # The medallion pipeline. Long lived: it keeps three streaming queries
+  # running and trails the topic by a trigger interval.
+  lakehouse:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.lakehouse
+    container_name: cloudrelay-lakehouse
+    profiles: ["lakehouse"]
+    environment:
+      - CLOUDRELAY_KAFKA_BOOTSTRAP=kafka:29092
+      - CLOUDRELAY_LAKEHOUSE_PATH=/data/lakehouse
+    command: ["run", "--continuous", "--interval-seconds", "15"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - lakehouse-data:/data/lakehouse
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v2.53.0
     container_name: cloudrelay-prometheus
@@ -82,3 +153,5 @@ services:
 volumes:
   redis-data:
   mongo-data:
+  kafka-data:
+  lakehouse-data:

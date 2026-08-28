@@ -9,3 +9,9 @@ data:
   SPRING_DATA_MONGODB_URI: {{ .Values.mongodb.uri | quote }}
   SPRING_DATA_REDIS_HOST: {{ .Values.redis.host | quote }}
   SPRING_DATA_REDIS_PORT: {{ .Values.redis.port | quote }}
+  CLOUDRELAY_ANALYTICS_ENABLED: {{ .Values.analytics.enabled | quote }}
+  CLOUDRELAY_KAFKA_BOOTSTRAP: {{ .Values.analytics.bootstrapServers | quote }}
+  CLOUDRELAY_ANALYTICS_TOPIC: {{ .Values.analytics.topic | quote }}
+  CLOUDRELAY_MATCHMAKING_INITIAL_WINDOW: {{ .Values.matchmaking.initialWindow | quote }}
+  CLOUDRELAY_MATCHMAKING_WINDOW_GROWTH_PER_SECOND: {{ .Values.matchmaking.windowGrowthPerSecond | quote }}
+  CLOUDRELAY_MATCHMAKING_MAX_WINDOW: {{ .Values.matchmaking.maxWindow | quote }}

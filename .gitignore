@@ -18,3 +18,6 @@ target/
 # Maven wrapper jar is fine to commit, surefire dumps are not
 hs_err_pid*
 replay_pid*
+
+# Local lakehouse: Delta tables, checkpoints and benchmark output
+data/
