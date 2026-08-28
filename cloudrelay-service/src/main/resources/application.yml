@@ -46,3 +46,12 @@ cloudrelay:
     waiting-ttl-hours: 2
     active-ttl-hours: 6
     session-code-length: 8
+
+  analytics:
+    # The Kafka tee to the lakehouse. Off unless a broker is configured, so the
+    # service runs identically with no analytics stack present.
+    enabled: ${CLOUDRELAY_ANALYTICS_ENABLED:false}
+    bootstrap-servers: ${CLOUDRELAY_KAFKA_BOOTSTRAP:localhost:9092}
+    topic: ${CLOUDRELAY_ANALYTICS_TOPIC:cloudrelay.session-events}
+    queue-capacity: 2000
+    sender-threads: 2
